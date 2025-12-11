@@ -33,11 +33,10 @@ class Message {
   // 解析后的显示内容
   final String _parsedContent;
 
-    DateTime get createTimeDt {
+  DateTime get createTimeDt {
     // createTime 是秒级时间戳，需要乘以1000转为毫秒
     return DateTime.fromMillisecondsSinceEpoch(createTime * 1000);
   }
-  
 
   Message({
     required this.localId,
@@ -133,7 +132,8 @@ class Message {
       return '';
     }
 
-    final compressContentRaw = map['compress_content'] ??
+    final compressContentRaw =
+        map['compress_content'] ??
         map['WCDB_CT_compress_content'] ??
         map['WCDB_CT_message_content'];
 
@@ -153,8 +153,7 @@ class Message {
       messageContent,
       myWxid,
       senderUsername: senderUsername.isEmpty ? null : senderUsername,
-      senderDisplayName:
-          senderDisplayName.isEmpty ? null : senderDisplayName,
+      senderDisplayName: senderDisplayName.isEmpty ? null : senderDisplayName,
       isSendFlag: isSendVal ?? _nullableIntValue(['is_send', 'isSend']),
     );
 
@@ -202,12 +201,15 @@ class Message {
         if (raw == null) return <int>[];
         if (raw is Uint8List) return raw.cast<int>();
         if (raw is List<int>) return raw;
-        if (raw is List) return raw.map((e) => int.tryParse(e.toString()) ?? 0).toList();
+        if (raw is List)
+          return raw.map((e) => int.tryParse(e.toString()) ?? 0).toList();
         if (raw is String) {
           try {
             final decoded = jsonDecode(raw);
             if (decoded is List) {
-              return decoded.map((e) => int.tryParse(e.toString()) ?? 0).toList();
+              return decoded
+                  .map((e) => int.tryParse(e.toString()) ?? 0)
+                  .toList();
             }
           } catch (_) {}
         }
@@ -536,7 +538,7 @@ class Message {
       final resolvedSender = isSystemCenter
           ? null
           : senderUsername ??
-              ((isSendFlag != null && isSendFlag == 1) ? myWxid : null);
+                ((isSendFlag != null && isSendFlag == 1) ? myWxid : null);
       final resolvedDisplayName = isSystemCenter
           ? null
           : (senderDisplayName?.isNotEmpty == true ? senderDisplayName : null);
@@ -753,9 +755,9 @@ class Message {
         return '视频号直播卡片';
       case 25769803825:
         return '文件消息';
-          case 34359738417:
+      case 34359738417:
         return '文件消息';
-          case 103079215153:
+      case 103079215153:
         return '文件消息';
       default:
         return '未知类型($localType)';
@@ -767,8 +769,6 @@ class Message {
     // 内部直接调用我们新的静态方法，避免代码重复
     return Message.getTypeDescriptionFromInt(localType);
   }
-
-  
 
   /// 获取格式化的创建时间
   String get formattedCreateTime {
@@ -804,9 +804,9 @@ class Message {
   /// 获取显示内容 - 直接返回解析后的内容
   String get displayContent {
     // 强制修复包含XML的长消息
-    if (_parsedContent.contains('<') && _parsedContent.length > 50) {
-      return '[不支持的消息类型]';
-    }
+    // if (_parsedContent.contains('<') && _parsedContent.length > 50) {
+    //   return '[不支持的消息类型]';
+    // }
 
     return _parsedContent;
   }

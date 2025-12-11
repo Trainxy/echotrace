@@ -1,6 +1,9 @@
+// ignore_for_file: unused_field
+
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
+import 'dart:async';
 import 'dart:io';
 import '../providers/app_state.dart';
 import '../services/config_service.dart';
@@ -8,7 +11,10 @@ import '../services/decrypt_service.dart';
 import '../services/annual_report_cache_service.dart';
 import '../services/database_service.dart';
 import '../services/logger_service.dart';
+import '../services/wxid_scan_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:path/path.dart' as p;
+import 'package:intl/intl.dart';
 
 /// 设置页面
 class SettingsPage extends StatefulWidget {
@@ -27,6 +33,7 @@ class _SettingsPageState extends State<SettingsPage> {
   final _imageAesKeyController = TextEditingController();
   final _configService = ConfigService();
   late final DecryptService _decryptService;
+  final _wxidScanService = WxidScanService();
 
   final bool _obscureKey = true;
   final bool _obscureImageXorKey = true;
@@ -35,8 +42,10 @@ class _SettingsPageState extends State<SettingsPage> {
   String? _statusMessage;
   bool _isSuccess = false;
   String _databaseMode = 'backup'; // 'backup' 或 'realtime'
-  bool _showWxidInput = false; // 是否显示手动输入wxid的输入框
+  bool _showWxidInput = true; // 始终允许手动输入wxid
+  bool _isScanningWxid = false; // 是否正在扫描wxid
   bool _debugMode = false; // 调试模式开关
+  String? _lastWxidPathChecked; // 最近扫描过wxid的路径，避免重复扫描
   // 记录初始配置，防止重复保存同样配置
   String _initialKey = '';
   String _initialPath = '';
@@ -88,14 +97,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _initialImageAesKey = imageAesKey ?? '';
         _initialWxid = manualWxid ?? '';
         _debugMode = debugMode;
-        // 如果已经有手动输入的wxid，显示输入框
-        _showWxidInput = (manualWxid != null && manualWxid.isNotEmpty);
+        _showWxidInput = true; // 始终显示 wxid 输入框
       });
-
-      // 如果有路径，检查是否存在账号目录
-      if (path != null && path.isNotEmpty) {
-        _checkAccountDirectory(path);
-      }
     }
   }
 
@@ -116,6 +119,7 @@ class _SettingsPageState extends State<SettingsPage> {
 
   /// 检查目录中是否存在账号目录（包含 db_storage 子文件夹）
   Future<void> _checkAccountDirectory(String path) async {
+    // 仍然检查目录，但不影响 wxid 输入框的显示
     try {
       final dir = Directory(path);
       if (!await dir.exists()) {
@@ -133,23 +137,36 @@ class _SettingsPageState extends State<SettingsPage> {
               '${entity.path}${Platform.pathSeparator}db_storage';
           if (await Directory(dbStoragePath).exists()) {
             foundAccountDir = true;
+            final detected = _extractWxidFromDirName(p.basename(entity.path));
+            if (detected != null) {
+              _applyDetectedWxid(detected, fromPath: entity.path);
+              // 若根目录框为空则填入
+              if (_pathController.text.isEmpty) {
+                _pathController.text = path;
+              }
+            }
             break;
           }
         }
       }
 
-      setState(() {
-        _showWxidInput = !foundAccountDir;
-      });
+      // 不隐藏输入框，仅记录状态
+      _lastWxidPathChecked = path;
 
       if (!foundAccountDir) {
         _showMessage('未在该目录中找到账号目录，请手动输入wxid', false);
       }
     } catch (e) {
-      setState(() {
-        _showWxidInput = true;
-      });
+      // 保持输入框显示
+      _lastWxidPathChecked = path;
     }
+  }
+
+  /// 从目录名提取 wxid
+  String? _extractWxidFromDirName(String dirName) {
+    final match = RegExp(r'wxid_[a-zA-Z0-9]+').firstMatch(dirName);
+    if (match != null) return match.group(0);
+    return dirName.isNotEmpty ? dirName : null;
   }
 
   Future<void> _selectDatabasePath() async {
@@ -175,21 +192,26 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       _showMessage('正在自动检测数据库目录...', true);
 
-      // 获取用户主目录
+      final possiblePaths = <String>{};
+
+      final regPath = await _wxidScanService.findWeChatFilesRoot();
+      if (regPath != null && regPath.isNotEmpty) {
+        possiblePaths.add(regPath);
+      }
+
+      // 兼容旧目录
       final homeDir =
           Platform.environment['USERPROFILE'] ??
           Platform.environment['HOME'] ??
           '';
-
-      if (homeDir.isEmpty) {
-        _showMessage('无法获取用户主目录', false);
-        return;
+      if (homeDir.isNotEmpty) {
+        possiblePaths.add(
+          '$homeDir${Platform.pathSeparator}Documents${Platform.pathSeparator}WeChat Files',
+        );
+        possiblePaths.add(
+          '$homeDir${Platform.pathSeparator}Documents${Platform.pathSeparator}xwechat_files',
+        );
       }
-
-      // 微信数据库路径
-      final possiblePaths = [
-        '$homeDir${Platform.pathSeparator}Documents${Platform.pathSeparator}xwechat_files',
-      ];
 
       for (final path in possiblePaths) {
         final dir = Directory(path);
@@ -215,16 +237,62 @@ class _SettingsPageState extends State<SettingsPage> {
         }
       }
 
-      setState(() {
-        _showWxidInput = true;
-      });
       _showMessage('未能自动检测到微信数据库目录，请手动选择或输入wxid', false);
     } catch (e) {
-      setState(() {
-        _showWxidInput = true;
-      });
       _showMessage('自动检测失败: $e', false);
     }
+  }
+
+  void _applyDetectedWxid(String wxid, {String? fromPath}) {
+    setState(() {
+      _wxidController.text = wxid;
+    });
+    if (fromPath != null) {
+      _lastWxidPathChecked = fromPath;
+      _showMessage('已从路径检测到账号: $wxid', true);
+    }
+  }
+
+  Future<String?> _pickWxidCandidate(List<WxidCandidate> candidates) async {
+    final fmt = DateFormat('yyyy-MM-dd HH:mm');
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          title: const Text('选择微信账号'),
+          content: SizedBox(
+            width: 360,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 360),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: candidates.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final c = candidates[index];
+                  final time = fmt.format(c.modified.toLocal());
+                  return ListTile(
+                    dense: true,
+                    title: Text(c.wxid),
+                    subtitle: Text('该账号登录时间: $time'),
+                    onTap: () => Navigator.pop(context, c.wxid),
+                  );
+                },
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   /// 递归查找所有 .db 文件
@@ -394,6 +462,15 @@ class _SettingsPageState extends State<SettingsPage> {
           }
         }
       }
+
+      // 更新基线，避免重复提示和重复扫描
+      _initialKey = key;
+      _initialPath = path;
+      _initialMode = _databaseMode;
+      _initialWxid = wxid;
+      _initialImageXorKey = imageXorKey;
+      _initialImageAesKey = imageAesKey;
+      _lastWxidPathChecked = path;
     } catch (e) {
       _showMessage('保存配置失败: $e', false);
     } finally {
@@ -420,6 +497,78 @@ class _SettingsPageState extends State<SettingsPage> {
         duration: const Duration(seconds: 3),
       ),
     );
+  }
+
+  void _updateScanProgress(String message, {bool success = true}) {
+    if (!mounted) return;
+    setState(() {
+      _statusMessage = message;
+      _isSuccess = success;
+    });
+  }
+
+  void _logScanDetail(String message, {Object? error, StackTrace? stackTrace}) {
+    if (!_debugMode) return;
+    unawaited(logger.debug('WxidScan', message));
+    if (error != null) {
+      unawaited(logger.error('WxidScan', message, error, stackTrace));
+    }
+  }
+
+  /// 点击扫描按钮：通过路径扫描 wxid
+  Future<void> _scanWxidFromMemory() async {
+    if (_isScanningWxid) return;
+    setState(() {
+      _isScanningWxid = true;
+    });
+    void handleProgress(String msg) {
+      _updateScanProgress(msg);
+      _logScanDetail(msg);
+    }
+    try {
+      handleProgress('正在扫描微信账号目录...');
+      final candidates = await _wxidScanService.scanWxids(onProgress: handleProgress);
+
+      if (candidates.isEmpty) {
+        const failMsg = '扫描失败：未找到微信账号目录';
+        _updateScanProgress(failMsg, success: false);
+        _showMessage(failMsg, false);
+        _logScanDetail(failMsg);
+        setState(() {
+          _showWxidInput = true;
+        });
+        return;
+      }
+
+      String? chosenWxid;
+      if (candidates.length == 1) {
+        chosenWxid = candidates.first.wxid;
+      } else {
+        chosenWxid = await _pickWxidCandidate(candidates);
+      }
+
+      if (chosenWxid == null || chosenWxid.isEmpty) {
+        const failMsg = '扫描取消或未选择账号';
+        _updateScanProgress(failMsg, success: false);
+        _showMessage(failMsg, false);
+        return;
+      }
+
+      _applyDetectedWxid(chosenWxid);
+      _showMessage('扫描成功，已填入wxid: $chosenWxid', true);
+      _logScanDetail('扫描成功，已检测到 wxid: $chosenWxid');
+    } catch (e, st) {
+      final msg = '扫描wxid失败: $e';
+      _updateScanProgress(msg, success: false);
+      _showMessage(msg, false);
+      _logScanDetail(msg, error: e, stackTrace: st);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isScanningWxid = false;
+        });
+      }
+    }
   }
 
   @override
@@ -680,49 +829,66 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ),
 
-            // 手动输入wxid区域（条件显示）
-            if (_showWxidInput) ...[
-              const SizedBox(height: 24),
-              _buildInputSection(
-                context,
-                title: '账号wxid',
-                subtitle: '未找到账号目录，请手动输入wxid（如：wxid_abc123）',
-                child: TextFormField(
-                  controller: _wxidController,
-                  decoration: InputDecoration(
-                    hintText: '请输入微信账号wxid',
-                    prefixIcon: const Icon(Icons.person_outline),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 1.5,
+            // 手动输入wxid区域（始终显示，可编辑/保存）
+            const SizedBox(height: 24),
+            _buildInputSection(
+              context,
+              title: '账号wxid',
+              subtitle: _wxidController.text.trim().isNotEmpty
+                  ? '已保存wxid，可手动修改或重新扫描'
+                  : '未找到账号目录，请手动输入wxid（如：wxid_abc123）',
+              child: Column(
+                children: [
+                  TextFormField(
+                    controller: _wxidController,
+                    decoration: InputDecoration(
+                      hintText: '请输入微信账号wxid',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                          width: 1.5,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Colors.grey.shade300,
+                          width: 1.5,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(
+                          color: Theme.of(context).colorScheme.primary,
+                          width: 2.0,
+                        ),
                       ),
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Colors.grey.shade300,
-                        width: 1.5,
-                      ),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                        color: Theme.of(context).colorScheme.primary,
-                        width: 2.0,
-                      ),
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return '请输入wxid';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton(
+                      onPressed: _isScanningWxid ? null : _scanWxidFromMemory,
+                      child: _isScanningWxid
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('扫描wxid'),
                     ),
                   ),
-                  validator: (value) {
-                    if (_showWxidInput && (value == null || value.isEmpty)) {
-                      return '请输入wxid';
-                    }
-                    return null;
-                  },
-                ),
+                ],
               ),
-            ],
+            ),
 
             const SizedBox(height: 32),
 

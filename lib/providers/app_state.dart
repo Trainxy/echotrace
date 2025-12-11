@@ -72,6 +72,8 @@ class AppState extends ChangeNotifier {
       // 如果已配置，根据配置的模式连接数据库
       if (_isConfigured) {
         final mode = await configService.getDatabaseMode();
+        final manualWxid = await configService.getManualWxid();
+        databaseService.setManualWxid(manualWxid);
         await logger.info('AppState', '数据库模式: $mode');
         if (mode == 'realtime') {
           await _tryConnectRealtimeDatabase();
@@ -171,6 +173,8 @@ class AppState extends ChangeNotifier {
 
         // 获取配置的数据库模式
         final mode = await configService.getDatabaseMode();
+        final manualWxid = await configService.getManualWxid();
+        databaseService.setManualWxid(manualWxid);
 
         if (mode == 'realtime') {
           try {

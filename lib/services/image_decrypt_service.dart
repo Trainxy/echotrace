@@ -4,6 +4,7 @@ import 'package:pointycastle/api.dart';
 import 'package:pointycastle/block/aes.dart';
 
 /// 微信图片解密服务
+/// 本服务实现借鉴了 recarto404/WxDatDecrypt 
 class ImageDecryptService {
   static const String _defaultV1AesKey = 'cfcd208495d565ef';
 
@@ -256,7 +257,6 @@ class ImageDecryptService {
   /// 将字符串转换为AES密钥（16字节）
   /// y.encode()[:16]
   /// 将字符串的每个字符作为ASCII字节，取前16字节
-  /// 例如："b18052363165af7e" -> [98, 49, 56, 48, 53, 50, 51, 54, 51, 49, 54, 53, 97, 102, 55, 101]
   static Uint8List hexToBytes16(String keyString) {
     // 去除空格，保留原始大小写
     final cleanKey = keyString.trim();

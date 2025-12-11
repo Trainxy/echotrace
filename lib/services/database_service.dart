@@ -35,6 +35,7 @@ class DatabaseService {
   static String? _messageDbPath;
   String? _contactDbPath;
   String? _currentAccountWxid;
+  String? _manualWxid; // 从配置/手动输入的当前账号wxid
 
   // 实时模式下，使用 WCDB DLL 的账号句柄
   int? _wcdbHandle;
@@ -127,7 +128,10 @@ class DatabaseService {
       _mode = DatabaseMode.decrypted;
       _sessionDbPath = normalizedPath;
       _contactDbPath = null;
-      _currentAccountWxid = _extractWxidFromPath(normalizedPath);
+      _currentAccountWxid =
+          (_manualWxid != null && _manualWxid!.isNotEmpty)
+              ? _manualWxid
+              : _extractWxidFromPath(normalizedPath);
       _wcdbHandle = null;
       _stopRealtimeWatcher();
 
@@ -141,7 +145,7 @@ class DatabaseService {
     }
   }
 
-  /// 连接实时加密数据库（VFS拦截模式）
+  /// 连接实时加密数据库（WCDB）
   /// [dbPath] 加密数据库路径
   /// [hexKey] 解密密钥（64位十六进制）
   /// [factory] 可选的数据库工厂
@@ -204,7 +208,10 @@ class DatabaseService {
       _mode = DatabaseMode.realtime;
       _sessionDbPath = normalizedPath;
       _contactDbPath = null;
-      _currentAccountWxid = _extractWxidFromPath(normalizedPath);
+      _currentAccountWxid =
+          (_manualWxid != null && _manualWxid!.isNotEmpty)
+              ? _manualWxid
+              : _extractWxidFromPath(normalizedPath);
       _startRealtimeWatcher();
 
       await logger.info(
@@ -2579,6 +2586,11 @@ class DatabaseService {
 
   /// 当前账户 wxid
   String? get currentAccountWxid => _currentAccountWxid;
+
+  /// 配置层设置手动 wxid（优先于路径推断）
+  void setManualWxid(String? wxid) {
+    _manualWxid = wxid;
+  }
 
   /// 当前数据路径（从session数据库路径推导）
   String? get currentDataPath {
