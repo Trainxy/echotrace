@@ -1,0 +1,10 @@
+name: echotrace_api
+description: EchoTrace Standalone API Server - Independent of Flutter
+version: 1.0.0
+publish_to: none
+
+environment:
+  sdk: ^3.0.0
+
+dependencies:
+  sqflite_common_ffi: ^2.3.0

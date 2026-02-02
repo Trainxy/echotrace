@@ -4,31 +4,95 @@ EchoTrace 提供 HTTP API 服务，用于获取微信通讯录和聊天记录数
 
 ## 启动方式
 
-### 命令行启动
+### 方式一：独立 API 服务器（推荐）
+
+独立 API 服务器**不依赖 Flutter 框架**，是纯 Dart 实现，更轻量稳定。
+
+#### 使用 Dart 运行
+
+```bash
+dart run bin/api_server.dart --db-path "C:\WeChatData\decrypted" --auth-key your-secret-key
+```
+
+#### 编译为独立可执行文件
+
+进入 `api_standalone` 目录编译：
+
+**Windows (PowerShell):**
+```powershell
+cd api_standalone
+dart pub get
+dart build cli
+
+# 编译后可执行文件位于:
+# build\cli\windows_x64\bundle\bin\api_server.exe
+
+# 运行
+.\build\cli\windows_x64\bundle\bin\api_server.exe -d "C:\WeChatData\decrypted" -k your-key
+```
+
+**Linux/macOS:**
+```bash
+cd api_standalone
+dart pub get
+dart build cli
+
+# 编译后可执行文件位于:
+# build/cli/{platform}/bundle/bin/api_server
+
+# 运行
+./build/cli/*/bundle/bin/api_server -d /data/wechat -k your-key
+```
+
+> 编译后的 `bundle` 目录包含可执行文件和所需的运行时库，可整体复制到目标机器部署。
+
+#### 参数说明
+
+| 参数 | 简写 | 必须 | 默认值 | 说明 |
+|------|------|------|--------|------|
+| `--db-path` | `-d` | 是 | - | 解密后的微信数据库目录路径 |
+| `--auth-key` | `-k` | 是 | - | API 验证密钥 |
+| `--port` | `-p` | 否 | 8080 | API 服务端口 |
+| `--refresh-interval` | `-r` | 否 | 300 | 通讯录自动刷新间隔（秒） |
+| `--help` | `-h` | 否 | - | 显示帮助信息 |
+
+#### 启动示例
+
+```bash
+# Windows
+api_server.exe -d "C:\Users\xxx\WeChatFiles\decrypted_dbs" -k my-secret-key -p 8080
+
+# Linux/Docker
+./api_server -d /data/wechat/decrypted -k my-secret-key -p 8080
+```
+
+### 方式二：通过 Flutter 主程序启动（需要 GUI 支持）
 
 ```bash
 echotrace.exe --api --port 8080 --auth-key your-secret-key --refresh-interval 300
 ```
 
-### 参数说明
+> 注意：此方式需要 Flutter 环境，可能在某些无头服务器上无法运行。
 
-| 参数 | 简写 | 必须 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `--api` | - | 是 | - | 启动 API 服务模式 |
-| `--port` | `-p` | 否 | 8080 | API 服务端口 |
-| `--auth-key` | `-k` | 是 | - | API 验证密钥 |
-| `--refresh-interval` | `-r` | 否 | 300 | 通讯录自动刷新间隔（秒） |
-| `--help` | `-h` | 否 | - | 显示帮助信息 |
+## 前置准备：获取解密后的数据库
 
-### 启动示例
+在启动 API 服务器之前，需要先通过 EchoTrace GUI 完成以下步骤：
 
-```bash
-# 基本启动
-echotrace.exe --api --auth-key my-secret-key
+1. **首次使用**：打开 EchoTrace GUI，配置微信数据目录和解密密钥
+2. **执行解密**：使用"数据管理"功能解密微信数据库
+3. **获取路径**：解密完成后，记录解密后数据库的存放目录
 
-# 自定义端口和刷新间隔
-echotrace.exe --api -p 9000 -k abc123 -r 600
+解密后的目录结构通常如下：
 ```
+decrypted_dbs/
+├── contact.db          # 联系人数据库
+├── message_0.db        # 消息数据库
+├── message_1.db
+├── message_2.db
+└── ...
+```
+
+将此目录路径作为 `--db-path` 参数传入即可。
 
 ## 认证方式
 
@@ -524,3 +588,67 @@ export_all_chats("./exports")
    - 请使用复杂的 Auth Key
    - 建议仅在局域网内使用
    - 如需外网访问，请配置防火墙和 HTTPS 反向代理
+
+---
+
+## Docker 部署（Linux 服务器）
+
+如果你想在 Linux 服务器上运行 API 服务，可以使用 Docker 部署。
+
+### 步骤 1：准备数据
+
+将 Windows 上解密后的微信数据库目录复制到 Linux 服务器：
+
+```bash
+# 在 Windows 上压缩
+# 将解密后的数据库目录打包（如 C:\WeChatData\decrypted）
+
+# 在 Linux 上解压到指定目录
+mkdir -p /data/wechat
+# 解压数据文件到 /data/wechat
+```
+
+### 步骤 2：构建并运行
+
+```bash
+cd api_standalone
+
+# 构建镜像
+docker build -t echotrace-api .
+
+# 运行容器
+docker run -d \
+  --name echotrace-api \
+  -p 8080:8080 \
+  -v /data/wechat:/data/wechat:ro \
+  echotrace-api \
+  -d /data/wechat -k your-secret-key -p 8080
+```
+
+### 使用 Docker Compose
+
+```yaml
+# docker-compose.yml
+version: '3.8'
+
+services:
+  echotrace-api:
+    build: ./api_standalone
+    ports:
+      - "8080:8080"
+    volumes:
+      - /data/wechat:/data/wechat:ro
+    command: ["-d", "/data/wechat", "-k", "your-secret-key", "-p", "8080"]
+    restart: unless-stopped
+```
+
+启动：
+```bash
+docker-compose up -d
+```
+
+### 验证服务
+
+```bash
+curl -H "Authorization: Bearer your-secret-key" http://localhost:8080/api/status
+```

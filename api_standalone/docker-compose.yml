@@ -1,0 +1,28 @@
+# EchoTrace API Server Docker Compose 配置
+# 使用方法:
+# 1. 将解密后的微信数据库放到 ./wechat_data 目录
+# 2. 修改 AUTH_KEY 环境变量
+# 3. docker-compose up -d
+
+version: '3.8'
+
+services:
+  echotrace-api:
+    build: .
+    container_name: echotrace-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # 挂载解密后的微信数据库目录
+      - ./wechat_data:/data/wechat:ro
+    environment:
+      # 通过环境变量配置（可选，会覆盖 CMD 参数）
+      - TZ=Asia/Shanghai
+    command: ["-d", "/data/wechat", "-k", "your-secret-key-here", "-p", "8080", "-r", "300"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/status?auth_key=your-secret-key-here"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
