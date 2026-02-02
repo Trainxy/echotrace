@@ -1,10 +1,11 @@
-// 应用入口：处理 CLI 导出参数，创建全局 AppState 并启动 UI
+// 应用入口：处理 CLI 导出/API 参数，创建全局 AppState 并启动 UI
 import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'cli/cli_export_runner.dart';
+import 'cli/cli_api_runner.dart';
 import 'providers/app_state.dart';
 import 'pages/home_page.dart';
 import 'services/config_service.dart';
@@ -22,6 +23,14 @@ Future<void> main(List<String> args) async {
     return false;
   };
 
+  // 尝试处理 API 服务模式
+  final apiRunner = CliApiRunner();
+  final apiExitCode = await apiRunner.tryHandle(args);
+  if (apiExitCode != null) {
+    exit(apiExitCode);
+  }
+
+  // 尝试处理 CLI 导出模式
   final cliRunner = CliExportRunner();
   final cliExitCode = await cliRunner.tryHandle(args);
   if (cliExitCode != null) {

@@ -15,6 +15,13 @@ class ConfigService {
   static const String _keyLaunchPending =
       'last_launch_pending'; // 上次是否未正常完成启动
 
+  // API 服务配置项
+  static const String _keyApiPort = 'api_port'; // API 端口，默认 8080
+  static const String _keyApiAuthKey = 'api_auth_key'; // API 验证密钥
+  static const String _keyContactsRefreshInterval =
+      'contacts_refresh_interval'; // 通讯录刷新间隔（秒），默认 300
+  static const String _keyApiEnabled = 'api_enabled'; // 是否启用 API 服务
+
   /// 保存解密密钥
   Future<void> saveDecryptKey(String key) async {
     final prefs = await SharedPreferences.getInstance();
@@ -135,6 +142,56 @@ class ConfigService {
     return prefs.getBool(_keyLaunchPending) ?? false;
   }
 
+  // ========== API 服务配置方法 ==========
+
+  /// 保存 API 端口
+  Future<void> saveApiPort(int port) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyApiPort, port);
+  }
+
+  /// 获取 API 端口（默认 8080）
+  Future<int> getApiPort() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyApiPort) ?? 8080;
+  }
+
+  /// 保存 API 验证密钥
+  Future<void> saveApiAuthKey(String authKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyApiAuthKey, authKey);
+  }
+
+  /// 获取 API 验证密钥
+  Future<String?> getApiAuthKey() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyApiAuthKey);
+  }
+
+  /// 保存通讯录刷新间隔（秒）
+  Future<void> saveContactsRefreshInterval(int seconds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_keyContactsRefreshInterval, seconds);
+  }
+
+  /// 获取通讯录刷新间隔（默认 300 秒）
+  Future<int> getContactsRefreshInterval() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_keyContactsRefreshInterval) ?? 300;
+  }
+
+  /// 保存 API 启用状态
+  Future<void> saveApiEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyApiEnabled, enabled);
+  }
+
+  /// 获取 API 启用状态（默认关闭）
+  Future<bool> getApiEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyApiEnabled) ?? false;
+  }
+
   /// 清除所有配置
   Future<void> clearAll() async {
     final prefs = await SharedPreferences.getInstance();
@@ -147,5 +204,10 @@ class ConfigService {
     await prefs.remove(_keyManualWxid);
     await prefs.remove(_keyDebugMode);
     await prefs.remove(_keyLaunchPending);
+    // API 配置
+    await prefs.remove(_keyApiPort);
+    await prefs.remove(_keyApiAuthKey);
+    await prefs.remove(_keyContactsRefreshInterval);
+    await prefs.remove(_keyApiEnabled);
   }
 }
